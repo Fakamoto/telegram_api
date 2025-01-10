@@ -6,3 +6,4 @@ pydantic
 load_dotenv
 python-telegram-bot==12.8
 python-dotenv
+sqlmodel

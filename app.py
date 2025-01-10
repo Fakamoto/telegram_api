@@ -5,19 +5,12 @@ from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
 import psycopg2
 import os
-from messages_db import create_table_if_not_exists
+from messages_db import create_db_and_tables, insert_message, get_session_messages
 from telegram import Bot, Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, CallbackContext
+from telegram.ext import Updater, MessageHandler, CallbackContext
 from telegram.ext.filters import Filters
-import logging
 
-logging.basicConfig(level=logging.INFO)
-
-# Crea una instancia del logger
-logger = logging.getLogger(__name__)
-#logger.info("")
-
-create_table_if_not_exists()
+create_db_and_tables()
 
 
 def get_db_connection():
@@ -71,12 +64,8 @@ class Query(BaseModel):
 
 def question(message_question, chat_id):
     if message_question:
-        messages = get_session_messages(
-            chat_id
-            
-        )  # Obtiene todos los mensajes de la sesión
+        messages = get_session_messages(chat_id)
 
-        #Contexto inicial del asistente
         context_messages = [
             {
                 "role": "system",
@@ -84,47 +73,37 @@ def question(message_question, chat_id):
             }
         ]
 
-        # Agrega todos los mensajes anteriores al contexto
+        # Convert SQLModel objects to dict format for context
         for msg in messages:
-
             context_messages.append(
                 {
                     "role": "user",
-                    "content": msg["message_question"],
+                    "content": msg.message_question,
                 }
             )
-
             context_messages.append(
                 {
-                    "role": "assistant",  # Usa 'role' para determinar el emisor del mensaje
-                    "content": msg["message_content"],  # Asegúrate de usar 'content'
+                    "role": "assistant",
+                    "content": msg.message_content,
                 }
             )
 
-
-        # Añade la pregunta actual al contexto fuera del bucle
         context_messages.append(
             {
                 "role": "user",
                 "content": message_question,
             }
         )
-        logger.info(context_messages)
 
-        # Envía la solicitud a la API GPT con el contexto completo
         completion = GPT_TOKEN.chat.completions.create(
             model="gpt-4-0125-preview",
             messages=context_messages,
         )
 
-        # Obtiene el mensaje de respuesta de la API GPT
         response_message = completion.choices[0].message
 
-    
-        # Inserta el mensaje de respuesta en la base de datos
         insert_message(message_question, response_message.content, chat_id, "user")
 
-        # Retorna la respuesta
         return {"message": response_message.content}
     
 def handle_text(update: Update, context: CallbackContext):
@@ -140,7 +119,6 @@ def handle_text(update: Update, context: CallbackContext):
             reply_dict = question(message, chat_id)
             reply_text = reply_dict['message']
         except Exception as e:
-            logger.error(f"Error llamando al servicio de ChatCompletion: {e}")
             reply_text = "Error llamando al servicio de ChatCompletion"
 
     # Envía reply_text como respuesta
